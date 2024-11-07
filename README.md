@@ -1,3 +1,18 @@
+
+## Uniswap Nezlobin Hook
+
+> Trying to implement Nezlobin hook approach for dynamic fee.
+
+
+
+
+### Reference of potential existing implementation
+- https://github.com/heypran/v4-dynamic-fee/blob/main/src/DirectionalFee.sol
+- https://github.com/Jaseempk/NZ-Directional-Fee/blob/main/src/NezlobinDirectionalFee.sol
+- https://github.com/Emirhan-Cavusoglu-sftw/CrossLink/blob/main/backend/src/Nezlobin.sol
+
+
+
 ## Foundry
 
 **Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
