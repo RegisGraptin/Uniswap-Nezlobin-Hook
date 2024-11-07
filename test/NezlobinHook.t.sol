@@ -85,7 +85,7 @@ contract TestGasPriceFeesHook is Test, Deployers {
             key,
             IPoolManager.ModifyLiquidityParams({
                 tickLower: -120,
-                tickUpper: -60,
+                tickUpper: 60,
                 liquidityDelta: 100 ether,
                 salt: bytes32(0)
             }),
@@ -123,7 +123,7 @@ contract TestGasPriceFeesHook is Test, Deployers {
         fee = hook.calculateDynamicFee(key.toId(), true);
         console.log(fee);
 
-        assertEq(fee, 0);  // No change in the fee
+        assertEq(fee, 3_000);  // No change in the fee
     }
 
     function test_gas_fee_impact() public {
@@ -134,16 +134,23 @@ contract TestGasPriceFeesHook is Test, Deployers {
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
-            // amountSpecified: -10 ether,
-            // amountSpecified: -0.01 ether,
-            amountSpecified: -0.00001 ether,
+            // amountSpecified: 10 ether,
+            amountSpecified: -0.1 ether,
+            // amountSpecified: -0.00001 ether,
             sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
         });
 
         int24 tick = getCurrentTick(key.toId());
 
         uint256 balanceOfToken1Before = currency1.balanceOfSelf();
+        uint256 swap1GasBefore = gasleft();
         swapRouter.swap(key, params, testSettings, ZERO_BYTES);
+        uint256 swap1GasAfter = gasleft();
+        
+        uint256 swap1Gas = swap1GasBefore - swap1GasAfter;
+        console.log("swap1Gas");
+        console.log(swap1Gas);
+
 
         tick = getCurrentTick(key.toId());
         console.logString("1 swap tick");
@@ -160,16 +167,36 @@ contract TestGasPriceFeesHook is Test, Deployers {
 
         vm.warp(2);
 
+        params = IPoolManager.SwapParams({
+            zeroForOne: false,
+            // amountSpecified: 10 ether,
+            amountSpecified: 0.3 ether,
+            // amountSpecified: -0.00001 ether,
+            sqrtPriceLimitX96: TickMath.MAX_SQRT_PRICE - 1
+        });
+
+        uint256 gasBefore = gasleft();
         swapRouter.swap(key, params, testSettings, ZERO_BYTES);
         swapRouter.swap(key, params, testSettings, ZERO_BYTES);
         swapRouter.swap(key, params, testSettings, ZERO_BYTES);
+        uint256 gasAfter = gasleft();
+
+
         console.logString("--> 2 swap tick");
         console.log(tick);
+        console.logString("--> Gas used");
+        console.log(gasBefore);
+        console.log(gasAfter);
+
+        uint256 gasUsed = gasBefore - gasAfter;
+        console.log(gasUsed);
+
+
 
         fee = hook.calculateDynamicFee(key.toId(), true);
         console.logString("--> Computed fee");
         console.log(fee);
-        assertGt(fee, 0);  // No change in the fee
+        assertGt(fee, 3_000);  // No change in the fee
     }
 
     // FIXME: Need to check the evolution of fee

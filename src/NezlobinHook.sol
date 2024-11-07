@@ -18,30 +18,29 @@ import {Math} from "v4-periphery/lib/permit2/lib/openzeppelin-contracts/contract
 import {console} from "forge-std/console.sol";
 
 contract NezlobinHook is BaseHook {
-	
     using LPFeeLibrary for uint24;
     using StateLibrary for IPoolManager;
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
 
-    uint24 public constant BASE_FEE = 3000; // 0.3%
+    uint24 public constant BASE_FEE = 3_000; // 0.3%
     uint24 public constant MIN_FEE = 500; // 0.05%
-    uint24 public constant MAX_FEE = 50000; // 5%  // TODO: What should be the max fee
-    
+    uint24 public constant MAX_FEE = 50_000; // 5%  // TODO: What should be the max fee
+
     uint24 public constant SCALE = 1000;
     uint24 public constant C = 750; // 0.75%
-    
+
     // Store the last blockTimestamp
     mapping(PoolId poolId => uint blockTimestamp) lastBlockTimestamps;
 
     // Track the last tick
     mapping(PoolId poolId => int24 lastTick) lastTicks;
-    
+
     error MustUseDynamicFee();
 
-	constructor(IPoolManager poolManager) BaseHook(poolManager) {}
+    constructor(IPoolManager poolManager) BaseHook(poolManager) {}
 
-	function getHookPermissions()
+    function getHookPermissions()
         public
         pure
         override
@@ -72,12 +71,11 @@ contract NezlobinHook is BaseHook {
         uint160,
         int24 tick
     ) external override onlyPoolManager returns (bytes4) {
-	
         // Check that the attached pool has dynamic fee
-        if(!key.fee.isDynamicFee()) revert MustUseDynamicFee();
+        if (!key.fee.isDynamicFee()) revert MustUseDynamicFee();
 
         // Save block information
-    	lastBlockTimestamps[key.toId()] = block.timestamp;
+        lastBlockTimestamps[key.toId()] = block.timestamp;
         lastTicks[key.toId()] = tick;
 
         return this.afterInitialize.selector;
@@ -95,54 +93,52 @@ contract NezlobinHook is BaseHook {
         returns (bytes4, BeforeSwapDelta, uint24)
     {
         PoolId poolId = key.toId();
-        
+
         // Check if we need to update the information
         if (lastBlockTimestamps[poolId] < block.timestamp) {
             lastBlockTimestamps[poolId] = block.timestamp;
 
             // Extract swap parameters
             bool zeroForOne = params.zeroForOne;
-
             uint24 newFee = calculateDynamicFee(poolId, zeroForOne);
-            if (newFee == 0) {
-                return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);        
-            }
-
-            // FIXME :: Analyse tick evolution throught price
-            // Understand why gas price spread
-            // Is it because of gas limit ???
 
             // Update last tick & fees
             (, int24 currentTick, , ) = poolManager.getSlot0(poolId);
             lastTicks[poolId] = currentTick;
             poolManager.updateDynamicLPFee(key, newFee);
+
+            // Continue the swap with the new fee
+            return (
+                this.beforeSwap.selector,
+                BeforeSwapDeltaLibrary.ZERO_DELTA,
+                0
+            );
         }
 
-
-        // TODO: I am computing dynamic fee for a given block
-        // But return the fee based on one action
-        // Should I not compute it each time based on the tick behaviour and swap action ?
+        // Check the fee according to the previous value stored
+        bool zeroForOne = params.zeroForOne;
+        uint24 newFee = calculateDynamicFee(poolId, zeroForOne);
+        poolManager.updateDynamicLPFee(key, newFee);
 
         return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
-
     function calculateDynamicFee(
         PoolId poolId,
         bool zeroForOne
-    ) public view returns (uint24) { 
-        // When return 0 --> no change in fee
+    ) public view returns (uint24) {
+        ///
+        /// When no change in price, return the base fee
+        ///
 
         // Need to update the fee
         (, int24 currentTick, , uint24 baseFee) = poolManager.getSlot0(poolId);
-
         int24 tickDelta = currentTick - lastTicks[poolId];
-        
-        // No need to update the fee
-        if (tickDelta == 0) { return 0; }
 
-        console.logString("- tickDelta");
-        console.log(tickDelta);
+        // No need to update the fee
+        if (tickDelta == 0) {
+            return BASE_FEE;
+        }
 
         // Normalize delta variation
         uint24 delta = tickDelta < 0 ? uint24(-tickDelta) : uint24(tickDelta);
@@ -152,8 +148,8 @@ contract NezlobinHook is BaseHook {
 
         // Compute the delta fee
         uint256 ddeltaFee = (uint256(delta) * uint256(C)) / uint256(SCALE);
-        console.log(ddeltaFee);
         uint24 deltaFee = uint24(ddeltaFee);
+        console.log("deltaFee");
         console.log(deltaFee);
 
         // Update fee according the swap direction
@@ -163,25 +159,17 @@ contract NezlobinHook is BaseHook {
             }
             return BASE_FEE - deltaFee;
         } else {
-            return uint24(Math.min(
-                BASE_FEE + deltaFee,
-                MAX_FEE
-            ));
+            return uint24(Math.min(BASE_FEE + deltaFee, MAX_FEE));
         }
-
 
         // FIXME: Should we limit the fee variation ?
         // Instead of updating it directly, should we take the current fee of the pool
         // and apply a variation from it, instead of updating it directly.
-
     }
-
 
     // function getCurrentFee(PoolKey calldata key) public view returns (uint24) {
     //     PoolId id = PoolIdLibrary.toId(key);
     //     (, , , uint24 fee) = StateLibrary.getSlot0(manager, id);
     //     return fee;
     // }
-
-	
 }
